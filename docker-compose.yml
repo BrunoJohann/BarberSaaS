@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # PostgreSQL - Banco principal
+  postgres:
+    image: postgres:15-alpine
+    container_name: barbersaas-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: barbersaas
+      POSTGRES_USER: barbersaas
+      POSTGRES_PASSWORD: barbersaas123
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --locale=pt_BR.UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    networks:
+      - barbersaas-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U barbersaas -d barbersaas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - Cache e sessões
+  redis:
+    image: redis:7-alpine
+    container_name: barbersaas-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - barbersaas-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes --requirepass barbersaas123
+
+  # pgAdmin - Interface web para PostgreSQL (opcional)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: barbersaas-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@barbersaas.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "8080:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - barbersaas-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  barbersaas-network:
+    driver: bridge

@@ -1,0 +1,260 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+    OWNER
+    STAFF
+    CUSTOMER
+}
+
+enum AppointmentStatus {
+    CONFIRMED
+    CANCELED
+}
+
+model Tenant {
+    id        String   @id @default(cuid())
+    name      String
+    slug      String   @unique
+    createdAt DateTime @default(now())
+
+    // Relations
+    users                      User[]
+    barbershops                Barbershop[]
+    barbers                    Barber[]
+    services                   Service[]
+    appointments               Appointment[]
+    workingPeriods             WorkingPeriod[]
+    blockedTimes               BlockedTime[]
+    staffBarbershops           StaffBarbershop[]
+    appointmentStatusHistories AppointmentStatusHistory[]
+    BarbershopSettings         BarbershopSettings[]
+    BarberService              BarberService[]
+    AppointmentService         AppointmentService[]
+
+    @@map("tenants")
+}
+
+model User {
+    id           String   @id @default(cuid())
+    name         String
+    email        String   @unique
+    phone        String?
+    passwordHash String
+    role         UserRole
+    tenantId     String?
+    createdAt    DateTime @default(now())
+
+    // Relations
+    tenant                     Tenant?                    @relation(fields: [tenantId], references: [id])
+    staffBarbershops           StaffBarbershop[]
+    appointmentStatusHistories AppointmentStatusHistory[]
+
+    @@map("users")
+}
+
+model Barbershop {
+    id          String   @id @default(cuid())
+    tenantId    String
+    name        String
+    description String?
+    timezone    String   @default("America/Sao_Paulo")
+    address     String?
+    phone       String?
+    slug        String
+    createdAt   DateTime @default(now())
+
+    // Relations
+    tenant           Tenant              @relation(fields: [tenantId], references: [id])
+    settings         BarbershopSettings?
+    barbers          Barber[]
+    services         Service[]
+    appointments     Appointment[]
+    staffBarbershops StaffBarbershop[]
+
+    @@unique([tenantId, slug])
+    @@map("barbershops")
+}
+
+model BarbershopSettings {
+    id              String @id @default(cuid())
+    tenantId        String
+    barbershopId    String @unique
+    slotGranularity Int? // null => usa fallback .env
+
+    // Relations
+    tenant     Tenant     @relation(fields: [tenantId], references: [id])
+    barbershop Barbershop @relation(fields: [barbershopId], references: [id])
+
+    @@map("barbershop_settings")
+}
+
+model Barber {
+    id           String   @id @default(cuid())
+    tenantId     String
+    barbershopId String
+    name         String
+    bio          String?
+    specialties  String?
+    isActive     Boolean  @default(true)
+    timezone     String?  @default("America/Sao_Paulo")
+    createdAt    DateTime @default(now())
+
+    // Relations
+    tenant         Tenant          @relation(fields: [tenantId], references: [id])
+    barbershop     Barbershop      @relation(fields: [barbershopId], references: [id])
+    workingPeriods WorkingPeriod[]
+    blockedTimes   BlockedTime[]
+    barberServices BarberService[]
+    appointments   Appointment[]
+
+    @@map("barbers")
+}
+
+model WorkingPeriod {
+    id           String   @id @default(cuid())
+    tenantId     String
+    barberId     String
+    weekday      Int // 0-6 (0 = domingo)
+    startMinutes Int // minutos desde 00:00
+    endMinutes   Int // minutos desde 00:00
+    createdAt    DateTime @default(now())
+
+    // Relations
+    tenant Tenant @relation(fields: [tenantId], references: [id])
+    barber Barber @relation(fields: [barberId], references: [id])
+
+    @@map("working_periods")
+}
+
+model BlockedTime {
+    id        String   @id @default(cuid())
+    tenantId  String
+    barberId  String
+    startsAt  DateTime
+    endsAt    DateTime
+    reason    String?
+    createdAt DateTime @default(now())
+
+    // Relations
+    tenant Tenant @relation(fields: [tenantId], references: [id])
+    barber Barber @relation(fields: [barberId], references: [id])
+
+    @@map("blocked_times")
+}
+
+model Service {
+    id              String   @id @default(cuid())
+    tenantId        String
+    barbershopId    String
+    name            String
+    durationMinutes Int
+    bufferMinutes   Int      @default(0)
+    priceCents      Int
+    isActive        Boolean  @default(true)
+    createdAt       DateTime @default(now())
+
+    // Relations
+    tenant              Tenant               @relation(fields: [tenantId], references: [id])
+    barbershop          Barbershop           @relation(fields: [barbershopId], references: [id])
+    barberServices      BarberService[]
+    appointmentServices AppointmentService[]
+
+    @@map("services")
+}
+
+model BarberService {
+    tenantId  String
+    barberId  String
+    serviceId String
+
+    // Relations
+    tenant  Tenant  @relation(fields: [tenantId], references: [id])
+    barber  Barber  @relation(fields: [barberId], references: [id])
+    service Service @relation(fields: [serviceId], references: [id])
+
+    @@id([tenantId, barberId, serviceId])
+    @@map("barber_services")
+}
+
+model Appointment {
+    id            String            @id @default(cuid())
+    tenantId      String
+    barbershopId  String
+    barberId      String
+    startsAt      DateTime
+    endsAt        DateTime
+    customerName  String
+    customerPhone String
+    customerEmail String?
+    status        AppointmentStatus @default(CONFIRMED)
+    notes         String?
+    createdAt     DateTime          @default(now())
+
+    // Relations
+    tenant                     Tenant                     @relation(fields: [tenantId], references: [id])
+    barbershop                 Barbershop                 @relation(fields: [barbershopId], references: [id])
+    barber                     Barber                     @relation(fields: [barberId], references: [id])
+    appointmentServices        AppointmentService[]
+    appointmentStatusHistories AppointmentStatusHistory[]
+
+    @@index([tenantId, barberId, startsAt])
+    @@map("appointments")
+}
+
+model AppointmentService {
+    id            String @id @default(cuid())
+    tenantId      String
+    appointmentId String
+    serviceId     String
+    order         Int? // ordem dos serviços no agendamento
+
+    // Relations
+    tenant      Tenant      @relation(fields: [tenantId], references: [id])
+    appointment Appointment @relation(fields: [appointmentId], references: [id])
+    service     Service     @relation(fields: [serviceId], references: [id])
+
+    @@map("appointment_services")
+}
+
+model StaffBarbershop {
+    id           String @id @default(cuid())
+    tenantId     String
+    userId       String
+    barbershopId String
+
+    // Relations
+    tenant     Tenant     @relation(fields: [tenantId], references: [id])
+    user       User       @relation(fields: [userId], references: [id])
+    barbershop Barbershop @relation(fields: [barbershopId], references: [id])
+
+    @@unique([tenantId, userId, barbershopId])
+    @@map("staff_barbershops")
+}
+
+model AppointmentStatusHistory {
+    id            String             @id @default(cuid())
+    tenantId      String
+    appointmentId String
+    fromStatus    AppointmentStatus?
+    toStatus      AppointmentStatus
+    at            DateTime           @default(now())
+    reason        String?
+    userId        String?
+
+    // Relations
+    tenant      Tenant      @relation(fields: [tenantId], references: [id])
+    appointment Appointment @relation(fields: [appointmentId], references: [id])
+    user        User?       @relation(fields: [userId], references: [id])
+
+    @@map("appointment_status_histories")
+}

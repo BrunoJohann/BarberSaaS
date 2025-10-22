@@ -1,0 +1,59 @@
+# Docker Compose para Testes
+# Use: docker-compose -f docker-compose.yml -f docker-compose.test.yml up -d
+
+version: '3.8'
+
+services:
+  postgres:
+    # Configurações específicas para testes
+    environment:
+      POSTGRES_DB: barbersaas_test
+      POSTGRES_USER: barbersaas_test
+      POSTGRES_PASSWORD: test123
+    # Porta diferente para não conflitar com desenvolvimento
+    ports:
+      - "5433:5432"
+    # Volumes separados para testes
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    # Configurações otimizadas para testes
+    command: >
+      postgres
+      -c fsync=off
+      -c synchronous_commit=off
+      -c full_page_writes=off
+      -c wal_level=minimal
+      -c max_wal_senders=0
+      -c checkpoint_segments=32
+      -c checkpoint_completion_target=0.9
+      -c log_statement=none
+      -c log_min_duration_statement=-1
+
+  redis:
+    # Configurações específicas para testes
+    environment:
+      REDIS_PASSWORD: test123
+    # Porta diferente para não conflitar
+    ports:
+      - "6380:6379"
+    # Configurações otimizadas para testes
+    command: >
+      redis-server
+      --appendonly no
+      --requirepass test123
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+
+  # Remover pgAdmin em testes
+  pgadmin:
+    profiles:
+      - disabled
+
+volumes:
+  postgres_test_data:
+    driver: local
+
+networks:
+  barbersaas-network:
+    driver: bridge

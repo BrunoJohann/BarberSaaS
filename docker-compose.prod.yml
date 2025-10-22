@@ -1,0 +1,104 @@
+# Docker Compose para Produção
+# Use: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+version: '3.8'
+
+services:
+  postgres:
+    # Configurações de produção
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-barbersaas}
+      POSTGRES_USER: ${POSTGRES_USER:-barbersaas}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Configurações de performance para produção
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --locale=en_US.UTF-8"
+    # Remover portas expostas em produção
+    ports: []
+    # Volumes para persistência
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    # Configurações de performance
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=4MB
+      -c min_wal_size=1GB
+      -c max_wal_size=4GB
+    # Configurações de recursos
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    # Health check mais rigoroso
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-barbersaas} -d ${POSTGRES_DB:-barbersaas}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  redis:
+    # Configurações de produção
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    # Remover portas expostas em produção
+    ports: []
+    # Configurações de performance
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    # Configurações de recursos
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    # Health check
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Remover pgAdmin em produção
+  pgadmin:
+    profiles:
+      - disabled
+
+volumes:
+  postgres_prod_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/docker/volumes/barbersaas_postgres_prod_data
+
+networks:
+  barbersaas-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
